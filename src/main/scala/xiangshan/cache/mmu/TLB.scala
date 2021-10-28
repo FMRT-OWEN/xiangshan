@@ -33,7 +33,7 @@ class TLB(Width: Int, q: TLBParameters)(implicit p: Parameters) extends TlbModul
   val io = IO(new TlbIO(Width, q))
 
   require(q.superAssociative == "fa")
-  if (q.sameCycle) {
+  if (q.sameCycle || q.missSameCycle) {
     require(q.normalAssociative == "fa")
   }
 
@@ -109,11 +109,12 @@ class TLB(Width: Int, q: TLBParameters)(implicit p: Parameters) extends TlbModul
   superPage.csr <> io.csr
 
   def TLBNormalRead(i: Int) = {
-    val (normal_hit, normal_ppn, normal_perm) = normalPage.r_resp_apply(i)
-    val (super_hit, super_ppn, super_perm) = superPage.r_resp_apply(i)
+    val (n_hit_sameCycle, normal_hit, normal_ppn, normal_perm) = normalPage.r_resp_apply(i)
+    val (s_hit_sameCycle, super_hit, super_ppn, super_perm) = superPage.r_resp_apply(i)
     assert(!(normal_hit && super_hit && vmEnable && RegNext(req(i).valid, init = false.B)))
 
     val hit = normal_hit || super_hit
+    val hit_sameCycle = n_hit_sameCycle || s_hit_sameCycle
     val ppn = Mux(normal_hit, normal_ppn, super_ppn)
     val perm = Mux(normal_hit, normal_perm, super_perm)
 
@@ -126,6 +127,7 @@ class TLB(Width: Int, q: TLBParameters)(implicit p: Parameters) extends TlbModul
 
     /** *************** next cycle when two cycle is false******************* */
     val miss = !hit && vmEnable
+    val miss_sameCycle = !hit_sameCycle && vmEnable
     hit.suggestName(s"hit_${i}")
     miss.suggestName(s"miss_${i}")
 
@@ -137,7 +139,7 @@ class TLB(Width: Int, q: TLBParameters)(implicit p: Parameters) extends TlbModul
     req(i).ready := resp(i).ready
     resp(i).valid := validReg
     resp(i).bits.paddr := Mux(vmEnable, paddr, if (!q.sameCycle) RegNext(vaddr) else vaddr)
-    resp(i).bits.miss := miss
+    resp(i).bits.miss := { if (q.missSameCycle) miss_sameCycle else miss }
     resp(i).bits.ptwBack := io.ptw.resp.fire()
 
     pmp(i).valid := resp(i).valid
