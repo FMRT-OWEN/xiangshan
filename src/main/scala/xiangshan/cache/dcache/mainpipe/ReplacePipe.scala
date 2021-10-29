@@ -96,7 +96,12 @@ class ReplacePipe(implicit p: Parameters) extends  DCacheModule {
   } else {
     s1_coh.state === ClientStates.Dirty
   }
-  val s1_can_go_to_s2 = s1_need_release && s2_ready && (io.data_read.ready || !s1_need_data)
+  val s1_need_read_data = if (dcacheParameters.alwaysReleaseData) {
+    s1_coh.state =/= ClientStates.Nothing
+  } else {
+    s1_coh.state >= ClientStates.Trunk
+  }
+  val s1_can_go_to_s2 = s1_need_release && s2_ready && (io.data_read.ready || !s1_need_read_data)
   val s1_can_go_to_mq = !s1_need_release
   val s1_can_go = s1_can_go_to_s2 || s1_can_go_to_mq
   val s1_fire_to_s2 = s1_valid && s1_can_go_to_s2
@@ -133,7 +138,7 @@ class ReplacePipe(implicit p: Parameters) extends  DCacheModule {
 
   io.req.ready := s0_can_go
 
-  io.data_read.valid := s1_valid && s1_need_data && s2_ready
+  io.data_read.valid := s1_valid && s1_need_read_data && s2_ready
   io.data_read.bits.way_en := s1_req.way_en
   io.data_read.bits.addr := s1_req.vaddr
   io.data_read.bits.rmask := ~0.U(DCacheBanks.W)
